@@ -1,0 +1,113 @@
+(**
+ * https://leetcode.com/problems/two-sum/
+ *
+ * Given an array of integers nums and an integer target, return indices of the
+ * two numbers such that they add up to target.
+ *
+ * You may assume that each input would have exactly one solution, and you may
+ * not use the same element twice.
+ *
+ * You can return the answer in any order.
+ *)
+ 
+module TwoSum
+  use bool.Bool
+  use int.Int
+  use array.Array
+  
+  (* ---------------------------- Problem Specs: --------------------------- *)
+  type cond_t = {
+    nums: array int;
+    target: int;
+  }
+  let function given (nums: array int) (target: int): cond_t =
+    { nums = nums; target = target; }
+
+  type answer_t = (int, int) (* The return value: ordered pair of integer *)
+  
+  let function accepts (i j: int): answer_t =
+    if i < j then (i, j) else (j, i); (* can return in any order *)
+  
+  predicate solution (c: cond_t) (ans: answer_t) =
+    let i, j = ans in
+    (0 <= i < j < length c.nums) && (* may not use the same element twice *)
+    (c.nums[i] + c.nums[j] = c.target)
+  
+  (* Given condition `cond`, there exists exactly one answer `ans` such that `p cond ans`: *)
+  predicate unique (p: 'a -> 'b -> bool) (cond: 'a) =
+    (exists ans. p cond ans) &&
+    (forall ans ans'. (p cond ans /\ p cond ans') -> ans = ans')
+    
+    
+    
+  (* ------------- 1. The naive (nested loop) implementation: -------------- *)
+  exception Found (int, int)
+  
+  let impl_naive (nums: array int) (target: int): (int, int)
+    requires { unique solution (given nums target) }
+    ensures { nums = old nums }
+    returns { (i, j) -> solution (given nums target) (accepts i j) }
+  =
+    try
+      assert { exists i j. solution (given nums target) (i, j)
+        so exists i j. solution (given nums target) (accepts i j) };
+       
+      let last = length nums - 1 in
+      for i = 0 to last do
+        invariant { forall i' j. 0 <= i' < i -> not solution (given nums target) (accepts i' j) }
+        
+        for j = i + 1 to last do
+          invariant { forall j'. i < j' < j -> not solution (given nums target) (accepts i j') }
+          
+          if nums[i] + nums[j] = target then
+            raise Found (i, j);
+        done;
+      done;
+      
+      assert { forall i j. not solution (given nums target) (accepts i j) };
+      absurd
+      
+    with Found answer ->
+      answer
+    end
+    
+  
+  
+  (* ------------------ 2. O(n) time with unordered map: ------------------ *)
+  clone fmap.MapImp with type key = int
+  
+  let impl_unordered_map (nums: array int) (target: int): (int, int)
+    requires { unique solution (given nums target) }
+    ensures { nums = old nums }
+    returns { (i, j) -> solution (given nums target) (accepts i j) }
+  =
+    try
+      assert { exists i j. solution (given nums target) (i, j)
+        so exists i j. solution (given nums target) (accepts i j) };
+        
+      let partner_map = create () in
+      for i = 0 to length nums - 1 do
+        invariant { forall k. 0 <= k < i -> mem nums[k] partner_map }
+        invariant { forall k1 k2. 0 <= k1 < k2 < i -> not solution (given nums target) (accepts k1 k2) }
+        invariant { forall x. mem x partner_map ->
+          (exists k. 0 <= k < i && find x partner_map = k && nums[k] = x) }
+      
+        let partner = target - nums[i] in
+        if mem partner partner_map then begin
+          let j = find partner partner_map in
+          assert { nums[i] + nums[j] = target };
+          assert { 0 <= j < i };
+          raise Found (i, j) end
+        else
+          add nums[i] i partner_map;
+      done;
+      
+      assert { forall i j. not solution (given nums target) (accepts i j) };
+      absurd
+      
+    with Found answer ->
+      answer
+    end
+
+
+end
