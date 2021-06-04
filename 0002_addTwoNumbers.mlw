@@ -1,0 +1,228 @@
+(**
+ * https://leetcode.com/problems/add-two-numbers/
+ *
+ * You are given two non-empty linked lists representing two non-negative integers.
+ * The digits are stored in reverse order, and each of their nodes contains a
+ * single digit. Add the two numbers and return the sum as a linked list.
+
+ * You may assume the two numbers do not contain any leading zero, except the
+ * number 0 itself.
+ *)
+ 
+ 
+(**
+ * Due to a lack of pointer machanics in WhyML, we usually use a `list` where
+ * a linked list should be used. In special cases (e.g. doubly linked / loopful),
+ * we model a linked list as a directed graph.
+ *)
+module AddTwoNumbers
+  use int.Int
+  use bool.Bool
+  use list.ListRich
+  use list.NthNoOpt
+  use list.HdTlNoOpt
+  
+  (* ---------------------------- Problem Specs: --------------------------- *)
+  let ghost function last (l: list int): int requires { length l > 0 } =
+    NthNoOpt.nth (length l - 1) l (* gets the last element *)
+  
+  predicate legal (l: list int) =
+    (length l > 0) /\ (* list must be non-empty *)
+    (forall v. mem v l -> 0 <= v <= 9) /\ (* each node contains a single digit *)
+    (length l >= 2 -> last l <> 0) (* no leading zero *)
+    
+  let rec function to_int (l: list int): int =
+    match l with
+    | Nil -> 0
+    | Cons v rest -> to_int rest * 10 + v (* digits stored in reverse order *)
+    end
+    
+    
+    
+  (* ----------------------- lemmas & implementation: ---------------------- *)
+  
+  (* lemmas on legality: *)
+  lemma reversibility_of_cons_and_hdtl:
+    forall l: list 'a. (is_nil l \/ l = Cons (hd l) (tl l))
+    
+  lemma legality_reduction:
+    forall l. (legal l /\ length l >= 2) -> legal (tl l) by (
+      (length (tl l) > 0) /\
+      ((forall v. mem v (tl l) -> 0 <= v <= 9) by
+        (forall v. mem v (tl l) -> mem v l) by
+        (forall v. mem v (tl l) -> mem v (Cons (hd l) (tl l)))) /\
+      (last (tl l) <> 0 by last l
+        = nth (length l - 1) l
+        = nth (length l - 1) (Cons (hd l) (tl l))
+        = nth (length l - 1 - 1) (tl l)
+        = nth (length (tl l) - 1) (tl l)
+        = last (tl l)
+      ))
+  
+  lemma optional_legality_reduction:
+    forall l. legal l -> (legal (tl l) \/ tl l = Nil)
+  
+  lemma legality_induction:
+    forall v l. (legal l /\ last l <> 0 /\ 0 <= v <= 9) -> legal (Cons v l)
+    
+  (* lemmas on integer representation: *)
+  let rec lemma always_non_negative (l: list int)
+    requires { l = Nil \/ legal l }
+    variant { l }
+    ensures { to_int l >= 0 }
+  =
+    match l with
+    | Nil -> true
+    | Cons v rest -> begin
+        assert { v >= 0 by (mem v l /\ legal l) };
+        assert { to_int rest >= 0 -> to_int l >= 0 };
+        always_non_negative rest;
+      end
+    end
+    
+  let rec lemma int_value_is_no_smaller_than_the_last_element (l: list int)
+    requires { legal l }
+    variant { l }
+    ensures { to_int l >= last l }
+  =
+    match l with
+    | Nil -> absurd
+    | Cons v rest -> if is_nil rest then begin
+        assert { to_int l = last l }; true; end
+      else begin
+        assert { v >= 0 by (legal l /\ mem v l) };
+        assert { to_int rest >= last rest -> to_int l >= last l by to_int l
+           = to_int rest * 10 + v
+          >= to_int rest * 10
+           = to_int rest * (1 + 9)
+           = to_int rest + to_int rest * 9
+          >= to_int rest
+          >= last rest
+           = last l };
+        int_value_is_no_smaller_than_the_last_element rest
+      end
+    end
+    
+  let rec lemma the_last_element_is_in_the_list (l: list int)
+    requires { legal l }
+    variant { l }
+    ensures { mem (last l) l }
+  =
+    match l with
+    | Nil -> absurd
+    | Cons _ rest -> if is_nil rest then
+        true
+      else
+        the_last_element_is_in_the_list rest
+    end
+  
+  lemma non_zero_list_means_non_zero_value:
+    forall l. (legal l /\ (hd l <> 0 \/ tl l <> Nil)) -> to_int l <> 0 by
+      ((hd l <> 0 -> (hd l >= 0 by mem (hd l) l) &&
+           to_int l
+         = to_int (Cons (hd l) (tl l))
+         = to_int (tl l) * 10 + hd l
+         >= hd l >= 0) /\
+       (tl l <> Nil -> length (tl l) >= 1
+         && length l >= 2
+         && (last l > 0 by last l >= 0 by mem (last l) l)
+         && to_int l >= last l > 0))
+  
+  lemma non_zero_means_non_empty_list:
+    forall l. (l = Nil \/ legal l) -> (to_int l <> 0 -> l <> Nil)
+ 
+ 
+ 
+ 
+ 
+  (* Helper functions: *)
+  let rec function helper (l1 l2: list int) (carry: int): list int
+    requires { 0 <= carry <= 1 }
+    requires { l1 = Nil \/ (legal l1 /\ to_int l1 > 0) }
+    requires { l2 = Nil \/ (legal l2 /\ to_int l2 > 0) }
+    ensures { to_int result = to_int l1 + to_int l2 + carry }
+    ensures { is_nil result \/ (legal result /\ last result <> 0) }
+    variant { l1, l2, carry }
+  =
+    let v1, r1 = match l1 with
+      | Nil -> (0, Nil)
+      | Cons v r -> (v, r)
+      end in
+    assert { r1 = Nil \/ legal r1 };
+    assert { l1 <> Nil -> l1 = Cons v1 r1 };
+    assert { 0 <= v1 <= 9 by (v1 = 0 \/ (legal l1 && mem v1 l1)) };
+      
+    let v2, r2 = match l2 with
+      | Nil -> (0, Nil)
+      | Cons v r -> (v, r)
+      end in
+    assert { r2 = Nil \/ legal r2 };
+    assert { l2 <> Nil -> l2 = Cons v2 r2 };
+    assert { 0 <= v2 <= 9 by (v2 = 0 \/ (legal l2 && mem v2 l2)) };
+      
+    let total = v1 + v2 + carry in
+    assert { 0 <= total <= 19 };
+    
+    if is_nil r1 && is_nil r2 && total = 0 then
+      Nil
+    else begin
+      let curr, new_carry = if total >= 10 then (total - 10, 1) else (total, 0) in
+      assert { 0 <= curr <= 9 };
+      assert { total = new_carry * 10 + curr };
+      assert { to_int r1 > 0 || to_int r2 > 0 || curr > 0 || new_carry = 1 };
+      
+      let inner = helper r1 r2 new_carry in
+      assert { curr > 0 || (inner <> Nil by to_int inner > 0) };
+      
+      let res = Cons curr inner in
+      assert { legal res by
+        ((curr > 0 -> legal res by ((legal (Cons curr Nil) by inner = Nil) \/ legal inner)) /\
+         (curr = 0 -> legal res by legal inner)) /\
+         0 <= curr };
+      assert { last res <> 0 };
+      
+      assert { to_int l1 = to_int r1 * 10 + v1 by
+        ((l1 = Nil -> v1 = 0 /\ r1 = Nil && to_int l1 = 0 = to_int r1 + v1) /\
+         (l1 <> Nil -> l1 = Cons v1 r1 && to_int l1 = to_int r1 * 10 + v1)) };
+         
+      assert { to_int l2 = to_int r2 * 10 + v2 by
+        ((l2 = Nil -> v2 = 0 /\ r2 = Nil && to_int l2 = 0 = to_int r2 + v2) /\
+         (l2 <> Nil -> l2 = Cons v2 r2 && to_int l2 = to_int r2 * 10 + v2)) };
+         
+      assert { to_int res = to_int l1 + to_int l2 + carry by to_int res
+        = to_int inner * 10 + curr
+        = (to_int r1 + to_int r2 + new_carry) * 10 + curr 
+        = to_int r1 * 10 + to_int r2 * 10 + new_carry * 10 + curr
+        = to_int r1 * 10 + to_int r2 * 10 + total
+        = to_int r1 * 10 + to_int r2 * 10 + v1 + v2 + carry
+        = (to_int r1 * 10 + v1) + (to_int r2 * 10 + v2) + carry
+        = to_int l1 + to_int l2 + carry };
+      
+      res;
+      end
+      
+    
+  let function is_zero (l: list int): bool
+    requires { legal l }
+    ensures { result <-> to_int l = 0 }
+  =
+    match l with
+      | Nil -> absurd
+      | Cons v r -> (v = 0) && is_nil r
+      end
+      
+  
+  (* Main procedule: *)
+  let impl (l1 l2: list int): list int
+    requires { legal l1 /\ legal l2 }
+    ensures { legal result /\ to_int result = to_int l1 + to_int l2 }
+  =
+    if is_zero l1 then
+      l2
+    else if is_zero l2 then
+      l1
+    else
+      helper l1 l2 0
+
+
+end
