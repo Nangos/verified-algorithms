@@ -1,0 +1,225 @@
+(**
+ * https://leetcode.com/problems/longest-substring-without-repeating-characters/
+ *
+ * Given a string s, find the length of the longest substring without
+ * repeating characters.
+ *)
+ 
+module LengthOfLongestSubstring
+  use bool.Bool
+  use int.Int
+  use ref.Ref
+  use array.Array
+  
+  (* ---------------------------- Problem Specs: --------------------------- *)
+  type char_t = int
+  type string_t = array char_t
+  
+  type substr_t = {
+    s: string_t;
+    start: int;
+    len: int;
+  }
+  
+  let function substr (s: string_t) (start len: int): substr_t
+  = { s = s; start = start; len = len }
+  
+  predicate valid (ss: substr_t) = (* without repeating characters *)
+    0 <= ss.start <= ss.start + ss.len <= length ss.s /\ (* in-bound *)
+    (forall i j. ss.start <= i < j < ss.start + ss.len -> ss.s[i] <> ss.s[j])
+    
+  predicate longest (s: string_t) (len: int) = (* length of longest substring *)
+    (exists start. valid (substr s start len)) /\
+    (forall start len'. valid (substr s start len') -> len' <= len)
+    
+    
+    
+  (* ------------- 1. The naive (nested loop) implementation: -------------- *)
+  use array.IntArraySorted
+  
+  let impl_naive (s: string_t): int
+    ensures { s = old s }
+    ensures { longest s result }
+  =
+    let ref best = 0 in
+    let last = length s - 1 in
+    let ghost snapshot_best = make (length s) 0 in
+    
+    for i = 0 to last do
+      invariant { valid (substr s 0 0) && exists start. valid (substr s start best) }
+      invariant { forall i' len. (0 <= i' < i /\ 0 <= len <= length s - i')
+        -> (valid (substr s i' len) -> len <= snapshot_best[i']) }
+      invariant { sorted_sub snapshot_best 0 i }
+      invariant { i > 0 -> snapshot_best[i - 1] = best }
+      
+      for j = i to last do
+        invariant { exists start. valid (substr s start best) }
+        invariant { forall len. 0 <= len <= j - i -> (valid (substr s i len) -> len <= best) }
+        invariant { i > 0 -> snapshot_best[i - 1] <= best }
+      
+        let ref ok = true in
+        for ii = i to j - 1 do
+          invariant { ok <-> (forall i' j'. (i <= i' < ii /\ i' < j' <= j) -> s[i'] <> s[j']) }
+        
+          for jj = ii + 1 to j do
+            invariant { ok <-> ((forall i' j'. (i <= i' < ii /\ i' < j' <= j) -> s[i'] <> s[j'])
+              /\ (forall j'. ii < j' < jj -> s[ii] <> s[j'])) }
+          
+            if s[ii] = s[jj] then ok <- false;
+          done;
+        done;
+            
+        let curr = j + 1 - i in
+        assert { ok <-> valid (substr s i curr) };
+        
+        if ok && curr > best then best <- curr;
+      done;
+      
+      snapshot_best[i] <- best;
+    done;
+    best
+  
+  
+  (* ----------- 2. Naive implementation, improved code style: ------------- *)
+  let function check_valid (s: string_t) (start len: int)
+    requires { 0 <= start <= start + len <= length s }
+    ensures { result <-> valid (substr s start len) }
+  =
+    let last = start + len - 1 in
+    for i = start to last do
+      invariant { forall i' j. (start <= i' < i /\ i' < j <= last) -> s[i'] <> s[j] }
+    
+      for j = i + 1 to last do
+        invariant { forall j'. i < j' < j -> s[i] <> s[j'] }
+      
+        if s[i] = s[j] then return false;
+      done;
+    done;
+    true
+    
+  let impl_naive_better_style (s: string_t): int
+    ensures { s = old s }
+    ensures { longest s result }
+  =
+    for len = length s downto 1 do
+      invariant { forall start len'. len' > len -> not valid (substr s start len') }
+      
+      for start = 0 to length s - len do
+        invariant { forall start'. start' < start -> not valid (substr s start' len) }
+        
+        if check_valid s start len then return len;
+      done;
+    done;
+    assert { valid (substr s 0 0) };
+    0
+  
+ 
+  
+  (* ------------ 3. The sliding window method implementation: ------------- *)
+  clone set.SetImp with type elt = char_t
+  
+  type window_t = {
+    str: string_t; (* the underlying string *)
+    char_set: set; (* the set of chars in the window *)
+    mutable left: int; (* the window's left bound, inclusive *)
+    mutable right: int; (* the window's right bound, exclusive *)
+  }
+  invariant { (* the window should always represent a valid substring: *)
+    valid (substr str left (right - left)) }
+  invariant { (* the char_set should always be consistent with the substring: *)
+    forall x. (mem x char_set <-> (exists i. left <= i < right /\ x = str[i])) }
+  by {
+    str = make 0 0; char_set = empty (); left = 0; right = 0; }
+    
+  
+  predicate window_invariant (w: window_t) =
+    (* for some silly reasons, I have to copy the same thing here: *)
+    valid (substr w.str w.left (w.right - w.left)) /\
+    forall x. (mem x w.char_set <-> (exists i. w.left <= i < w.right /\ x = w.str[i]))
+  
+  
+  let function new_window (s: string_t): window_t
+    ensures { result.str = s /\ result.left = 0 /\ result.right = 0 }
+  = { str = s;
+      char_set = empty ();
+      left = 0;
+      right = 0; }
+  
+  
+  let push_right (w: window_t): unit
+    requires { w.right < length w.str }
+    requires { not mem w.str[w.right] w.char_set }
+    ensures { w.str = old w.str /\ w.left = old w.left }
+    ensures { w.right = old w.right + 1 }
+  =
+    add w.str[w.right] w.char_set;
+    w.right <- w.right + 1
+
+
+  let pop_left (w: window_t): unit
+    requires { w.left < w.right }
+    ensures { w.str = old w.str /\ w.right = old w.right }
+    ensures { w.left = old w.left + 1 }
+  =
+    remove w.str[w.left] w.char_set;
+    w.left <- w.left + 1
+    
+    
+  predicate partial_longest (s: string_t) (len: int) (sublen: int) =
+    (exists start. start + len <= sublen /\ valid (substr s start len)) /\
+    (forall start len'. (start + len' <= sublen /\ valid (substr s start len')) -> len' <= len)
+    
+    
+  
+  let impl_sliding_window (s: string_t): int
+    ensures { s = old s }
+    ensures { longest s result }
+  =
+    let w = new_window s in
+    let ref best = 0 in
+    
+    while w.right < length s do
+      invariant { 0 <= w.left <= w.right <= length s }
+      invariant { valid (substr s 0 0) && partial_longest s best w.right }
+      invariant { forall left'. left' < w.left -> not valid (substr s left' (w.right - left'))
+        && not valid (substr s left' (w.right + 1 - left')) }
+      invariant { window_invariant w }
+      variant { length s - w.right }
+      
+      while mem s[w.right] w.char_set do
+        invariant { forall left'. left' < w.left ->
+          not valid (substr s left' (w.right + 1 - left')) }
+        invariant { window_invariant w }
+        variant { w.right - w.left }
+        
+        pop_left w;
+      done;
+      
+      push_right w;
+      let curr = w.right - w.left in
+      
+      (** the induction on `partial_longest` (the "forall" part) turned to be tricky
+          for the prover, so I inserted some asserts for guidance: **)
+      
+      (* rebase `left'` (from loop invariant) into `len`: *)
+      assert { forall len. len > curr -> w.right - len < w.left &&
+        not valid (substr s (w.right - len) (w.right - (w.right - len))) &&
+        not valid (substr s (w.right - len) len) };
+      (* inverse & negate, to make it look closer to the predicate `partial_longest`: *)
+      assert { forall len. valid (substr s (w.right - len) len) -> len <= curr };
+      
+      if curr > best then best <- curr; (* simply sets best := max(best, curr) *)
+      
+      (* merge the current loop's info with previous loops': *)
+      assert { forall right len. right <= w.right -> 
+        (valid (substr s (right - len) len) -> len <= best) };
+      (* rebase `right len` into `start len` towards the predicate `partial_longest`: *)
+      assert { forall start len. start + len <= w.right ->
+        (valid (substr s (start + len - len) len) -> len <= best) &&
+        (valid (substr s start len) -> len <= best) };
+
+    done;
+    best
+    
+
+end
