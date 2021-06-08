@@ -1,0 +1,204 @@
+(* A simple yet neat demo of game verification using Why3. *)
+
+module TakeTheLastCoinAndYouWin
+  use int.Int
+  
+  type move_t = TakeOne | TakeTwo
+  type player_t = P1 | P2
+  
+  let function same_player (p1 p2: player_t): bool
+    ensures { result <-> p1 = p2 }
+  =
+    match p1, p2 with
+    | P1, P1 -> true
+    | P2, P2 -> true
+    | _ -> false
+    end
+  
+  (* who takes the last coin wins *)
+  type game_t = {
+    mutable coinCount: int;
+    mutable turn: player_t; 
+    mutable winner: player_t; (* invalid until coin count is zero *)
+  } invariant {
+    coinCount >= 0 /\
+    coinCount = 0 -> winner <> turn (* when there's no move, player in turn loses *)
+  } by {
+    coinCount = 0; turn = P1; winner = P2;
+  }
+  
+  
+  let new_game (count: int): game_t
+    requires { count > 0 } (* cannot start with no coins *)
+    ensures { result.coinCount = count /\ result.turn = P1 } (* P1 plays first *)
+  =
+    { coinCount = count; turn = P1; winner = any player_t; }
+    
+    
+  predicate playable (g: game_t) (p: player_t) (m: move_t) =
+    g.turn = p /\
+    match m with TakeOne -> g.coinCount >= 1 | TakeTwo -> g.coinCount >= 2 end
+    
+    
+  let function calc_playable (g: game_t) (p: player_t) (m: move_t): bool
+    ensures { result <-> playable g p m }
+  =
+    if not same_player p g.turn then
+      return false;
+    match m with
+    | TakeOne -> g.coinCount >= 1
+    | TakeTwo -> g.coinCount >= 2
+    end
+    
+    
+  (* returns true if move is valid and false if not. *)
+  (* such API is very suitable for smart contracts, since a race condition is not
+     possible, and an invalid input simply has no effect. *)
+  let move (g: game_t) (p: player_t) (m: move_t): bool
+    ensures { result <-> playable (old g) p m }
+    ensures { (result /\ m = TakeOne) -> g.coinCount = old g.coinCount - 1 }
+    ensures { (result /\ m = TakeTwo) -> g.coinCount = old g.coinCount - 2 }
+    ensures { (result /\ g.coinCount = 0) -> g.winner = p } (* you win! *)
+    ensures { result -> not same_player p g.turn } (* switches turn *)
+    ensures { not result -> g = old g }
+  =
+    if not calc_playable g p m then
+      return false;
+    match m with
+    | TakeOne -> g.coinCount <- g.coinCount - 1
+    | TakeTwo -> g.coinCount <- g.coinCount - 2
+    end;
+    match p with
+    | P1 -> g.turn <- P2
+    | P2 -> g.turn <- P1
+    end;
+    if g.coinCount = 0 then
+      g.winner <- p;
+    true
+    
+    
+  (** ok now let's prove something cool: when does P1/P2 have a winning strategy? **)
+  use int.ComputerDivision
+  
+  val function arbitraryStrategy (count: int): move_t (* merely obeys the rule: *)
+    requires { count > 0 }
+    ensures { count = 1 -> result = TakeOne }
+    ensures { count >= 2 -> result = TakeOne \/ result = TakeTwo }
+    
+  (* validity requirement for any strategy: *)
+  predicate valid_strategy (strategy: int -> move_t) =
+    forall count. count = 1 -> strategy count = TakeOne
+    
+  lemma arbitraryStrategy_is_valid:
+    valid_strategy arbitraryStrategy
+    
+  (* simulates a game given both strategies, and returns the winner: *)
+  let generalGameSimulation (initialCount: int) (strategyP1 strategyP2: int -> move_t): player_t 
+    requires { initialCount > 0 }
+    requires { valid_strategy strategyP1 /\ valid_strategy strategyP2 }
+  =
+    let g = new_game initialCount in
+    while g.coinCount > 0 do
+      variant { g.coinCount }
+      invariant { g.turn = P1 }
+      (* P1 moves *)
+      let moveP1 = strategyP1 g.coinCount in
+      if not move g P1 moveP1 then
+        absurd;
+      if g.coinCount = 0 then
+        break;
+      (* P2 moves *)
+      let moveP2 = strategyP2 g.coinCount in
+      if not move g P2 moveP2 then
+        absurd;
+    done;
+    g.winner
+    
+  
+  (* when the initial coin count is a multiple of 3 then P2 has a winning strategy: *)
+  let function winningStrategyP2 (count: int): move_t
+    requires { count > 0 /\ mod count 3 <> 0 }
+  =
+    let r = mod count 3 in
+    if r = 2 then
+      TakeTwo
+    else if r = 1 then
+      TakeOne
+    else
+      absurd
+      
+  lemma winningStrategyP2_is_valid:
+    valid_strategy winningStrategyP2
+    
+  
+  let proofOfWinningP2 (initialCount: int) (strategyP1 strategyP2: int -> move_t)
+  : player_t (* returns the winner *)
+    requires { initialCount > 0 /\ mod initialCount 3 = 0 } (* start at multiple of 3 *)
+    requires { strategyP1 = arbitraryStrategy } (* P1 plays whatever *)
+    requires { strategyP2 = winningStrategyP2 } (* P2 uses its winning strategy *)
+    ensures { result = P2 } (* ensures that P2 is the winner *)
+  =
+   (* `generalGameSimulation initialCount strategyP1 strategyP2` *)
+   (* The code above (a blackbox call) does not work! In order to guide the proof,
+      I have to copy & paste the simulation code and insert invariants. 
+      Hope this inconvenience can be solved in the future! *)
+    let g = new_game initialCount in
+    while g.coinCount > 0 do
+      variant { g.coinCount }
+      invariant { g.turn = P1 }
+      invariant { mod g.coinCount 3 = 0 }
+      invariant { g.coinCount >= 0 }
+      invariant { g.coinCount = 0 -> g.winner = P2 }
+      (* P1 moves *)
+      let moveP1 = strategyP1 g.coinCount in
+      if not move g P1 moveP1 then
+        absurd;
+      assert { g.coinCount > 0 };
+      (* P2 moves *)
+      let moveP2 = strategyP2 g.coinCount in
+      if not move g P2 moveP2 then
+        absurd;
+    done;
+    g.winner
+    
+    
+  (* when the initial coin count is not a multiple of 3 then P1 has a winning strategy: *)
+  let function winningStrategyP1 (count: int): move_t
+    requires { count > 0 /\ mod count 3 <> 0 }
+  =
+    winningStrategyP2 count (* P1 just copies P2's winning strategy, unsurprisingly! *)
+      
+  
+  let proofOfWinningP1 (initialCount: int) (strategyP1 strategyP2: int -> move_t)
+  : player_t (* returns the winner *)
+    requires { initialCount > 0 /\ mod initialCount 3 <> 0 } (* start at non-multiple of 3 *)
+    requires { strategyP2 = arbitraryStrategy } (* P2 plays whatever *)
+    requires { strategyP1 = winningStrategyP1 } (* P1 uses its winning strategy *)
+    ensures { result = P1 } (* ensures that P1 is the winner *)
+  =
+    let g = new_game initialCount in
+    (* P1 plays an initial move: *)
+    let moveInit = strategyP1 g.coinCount in
+    if not move g P1 moveInit then
+      absurd;
+      
+    while g.coinCount > 0 do
+      variant { g.coinCount }
+      invariant { g.turn = P2 }
+      invariant { mod g.coinCount 3 = 0 }
+      invariant { g.coinCount >= 0 }
+      invariant { g.coinCount = 0 -> g.winner = P1 }
+      (* P2 moves *)
+      let moveP2 = strategyP2 g.coinCount in
+      if not move g P2 moveP2 then
+        absurd;
+      assert { g.coinCount > 0 };
+      (* P1 moves *)
+      let moveP1 = strategyP1 g.coinCount in
+      if not move g P1 moveP1 then
+        absurd;
+    done;
+    g.winner
+    
+    
+end
