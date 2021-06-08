@@ -28,7 +28,7 @@ module TakeTheLastCoinAndYouWin
   }
   
   
-  let new_game (count: int): game_t
+  let function new_game (count: int): game_t
     requires { count > 0 } (* cannot start with no coins *)
     ensures { result.coinCount = count /\ result.turn = P1 } (* P1 plays first *)
   =
@@ -79,19 +79,12 @@ module TakeTheLastCoinAndYouWin
     
   (** ok now let's prove something cool: when does P1/P2 have a winning strategy? **)
   use int.ComputerDivision
-  
-  val function arbitraryStrategy (count: int): move_t (* merely obeys the rule: *)
-    requires { count > 0 }
-    ensures { count = 1 -> result = TakeOne }
-    ensures { count >= 2 -> result = TakeOne \/ result = TakeTwo }
     
   (* validity requirement for any strategy: *)
   predicate valid_strategy (strategy: int -> move_t) =
-    forall count. count = 1 -> strategy count = TakeOne
-    
-  lemma arbitraryStrategy_is_valid:
-    valid_strategy arbitraryStrategy
-    
+    forall g p. (g.coinCount > 0 /\ g.turn = p) -> playable g p (strategy g.coinCount)
+
+
   (* simulates a game given both strategies, and returns the winner: *)
   let generalGameSimulation (initialCount: int) (strategyP1 strategyP2: int -> move_t): player_t 
     requires { initialCount > 0 }
@@ -134,7 +127,7 @@ module TakeTheLastCoinAndYouWin
   let proofOfWinningP2 (initialCount: int) (strategyP1 strategyP2: int -> move_t)
   : player_t (* returns the winner *)
     requires { initialCount > 0 /\ mod initialCount 3 = 0 } (* start at multiple of 3 *)
-    requires { strategyP1 = arbitraryStrategy } (* P1 plays whatever *)
+    requires { valid_strategy strategyP1 } (* P1 plays whatever *)
     requires { strategyP2 = winningStrategyP2 } (* P2 uses its winning strategy *)
     ensures { result = P2 } (* ensures that P2 is the winner *)
   =
@@ -172,7 +165,7 @@ module TakeTheLastCoinAndYouWin
   let proofOfWinningP1 (initialCount: int) (strategyP1 strategyP2: int -> move_t)
   : player_t (* returns the winner *)
     requires { initialCount > 0 /\ mod initialCount 3 <> 0 } (* start at non-multiple of 3 *)
-    requires { strategyP2 = arbitraryStrategy } (* P2 plays whatever *)
+    requires { valid_strategy strategyP2 } (* P2 plays whatever *)
     requires { strategyP1 = winningStrategyP1 } (* P1 uses its winning strategy *)
     ensures { result = P1 } (* ensures that P1 is the winner *)
   =
