@@ -1,0 +1,126 @@
+module LengthOfLongestSubstring
+  use bool.Bool
+  use int.Int
+  use ref.Ref
+  use array.Array
+  
+  (* ---------------------------- Problem Specs: --------------------------- *)
+  type char_t = int
+  type string_t = array char_t
+  
+  type substr_t = {
+    s: string_t;
+    start: int;
+    len: int;
+  }
+  
+  let function substr (s: string_t) (start len: int): substr_t
+  = { s = s; start = start; len = len }
+  
+  predicate valid (ss: substr_t) = (* without repeating characters *)
+    0 <= ss.start <= ss.start + ss.len <= length ss.s /\ (* in-bound *)
+    (forall i j. ss.start <= i < j < ss.start + ss.len -> ss.s[i] <> ss.s[j])
+    
+  predicate longest (s: string_t) (len: int) = (* length of longest substring *)
+    (exists start. valid (substr s start len)) /\
+    (forall start len'. valid (substr s start len') -> len' <= len)
+    
+  
+  
+  (* ----------------- 4. The sliding window, but faster: ------------------ *)
+  clone fmap.MapImp with type key = char_t
+  
+  type window_t = {
+    str: string_t; (* the underlying string *)
+    last_occ: t int; (* mapping chars to its last occurence *)
+    mutable left: int; (* the window's left bound, inclusive *)
+    mutable right: int; (* the window's right bound, exclusive *)
+  }
+  invariant { (* the window should always represent a valid substring: *)
+    left <= right && valid (substr str left (right - left)) }
+  invariant { (* the window is always the longest, fixing the right bound: *)
+    forall i. 0 <= i < left -> not valid (substr str i (right - i)) }
+  invariant { (* integrity of last occurence: *)
+    forall c. mem c last_occ -> let pos = find c last_occ in
+      (pos < right /\ str[pos] = c /\ forall i. pos < i < right -> str[i] <> c) }
+  invariant { (* integrity of non-occurence: *)
+    forall c. not mem c last_occ -> forall i. 0 <= i < right -> str[i] <> c }
+  by {
+    str = make 0 0; last_occ = create (); left = 0; right = 0; }
+    
+  
+  predicate window_invariant (w: window_t) =
+    w.left <= w.right && valid (substr w.str w.left (w.right - w.left)) /\
+    (forall i. 0 <= i < w.left -> not valid (substr w.str i (w.right - i))) /\
+    (forall c. mem c w.last_occ -> let pos = find c w.last_occ in
+      (pos < w.right /\ w.str[pos] = c /\ forall i. pos < i < w.right -> w.str[i] <> c)) /\
+    (forall c. not mem c w.last_occ -> forall i. 0 <= i < w.right -> w.str[i] <> c)
+  
+  
+  let function new_window (s: string_t): window_t
+    ensures { result.str = s /\ result.left = 0 /\ result.right = 0 }
+  = { str = s;
+      last_occ = create ();
+      left = 0;
+      right = 0; }
+  
+  
+  let slide (w: window_t): unit
+    requires { w.right < length w.str }
+    ensures { w.str = old w.str /\ w.left >= old w.left }
+    ensures { w.right = old w.right + 1 }
+  =
+    let c = w.str[w.right] in
+    if mem c w.last_occ && find c w.last_occ >= w.left then begin
+      let old_left = find c w.last_occ in
+      assert { not valid (substr w.str old_left (w.right + 1 - old_left)) };
+      w.left <- old_left + 1; end
+    else
+      assert { forall i. 0 <= i < w.left -> not valid (substr w.str i (w.right - i))
+        && not valid (substr w.str i (w.right + 1 - i)) };
+
+    add c w.right w.last_occ;
+    w.right <- w.right + 1;
+    
+    
+  predicate partial_longest (s: string_t) (len: int) (sublen: int) =
+    (exists start. start + len <= sublen /\ valid (substr s start len)) /\
+    (forall start len'. (start + len' <= sublen /\ valid (substr s start len')) -> len' <= len)
+  
+  
+  let impl_sliding_window_faster (s: string_t): int
+    ensures { s = old s }
+    ensures { longest s result }
+  =
+    let w = new_window s in
+    let ref best = 0 in
+    
+    while w.right < length s do
+      variant { length s - w.right }
+      invariant { valid (substr s 0 0) && partial_longest s best w.right }
+      invariant { window_invariant w }
+      slide w;
+      
+      let curr = w.right - w.left in
+      
+      (* rebase `left'` (from loop invariant) into `len`: *)
+      assert { forall len. len > curr -> w.right - len < w.left &&
+        not valid (substr s (w.right - len) (w.right - (w.right - len))) &&
+        not valid (substr s (w.right - len) len) };
+      (* inverse & negate, to make it look closer to the predicate `partial_longest`: *)
+      assert { forall len. valid (substr s (w.right - len) len) -> len <= curr };
+      
+      if curr > best then best <- curr; (* simply sets best := max(best, curr) *)
+      
+      (* merge the current loop's info with previous loops': *)
+      assert { forall right len. right <= w.right -> 
+        (valid (substr s (right - len) len) -> len <= best) };
+      (* rebase `right len` into `start len` towards the predicate `partial_longest`: *)
+      assert { forall start len. start + len <= w.right ->
+        (valid (substr s (start + len - len) len) -> len <= best) &&
+        (valid (substr s start len) -> len <= best) };
+    done;
+    best
+    
+
+end
