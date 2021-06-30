@@ -37,8 +37,11 @@ module AddTwoNumbers
     | Cons v rest -> to_int rest * 10 + v (* digits stored in reverse order *)
     end
     
+  val spec (l1 l2: list int): list int
+    requires { legal l1 /\ legal l2 }
+    ensures { legal result /\ to_int result = to_int l1 + to_int l2 }  
     
-    
+
   (* ----------------------- lemmas & implementation: ---------------------- *)
   
   (* lemmas on legality: *)

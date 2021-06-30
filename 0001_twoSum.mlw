@@ -37,7 +37,11 @@ module TwoSum
   predicate unique (p: 'a -> 'b -> bool) (cond: 'a) =
     (exists ans. p cond ans) &&
     (forall ans ans'. (p cond ans /\ p cond ans') -> ans = ans')
-    
+
+  val spec (nums: array int) (target: int): (int, int)
+    requires { unique solution (given nums target) }
+    ensures { nums = old nums }
+    returns { (i, j) -> solution (given nums target) (accepts i j) }  
     
     
   (* ------------- 1. The naive (nested loop) implementation: -------------- *)

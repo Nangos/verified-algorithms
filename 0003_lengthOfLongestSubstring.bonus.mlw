@@ -25,7 +25,10 @@ module LengthOfLongestSubstring
     (exists start. valid (substr s start len)) /\
     (forall start len'. valid (substr s start len') -> len' <= len)
     
-  
+  val spec (s: string_t): int
+    ensures { s = old s }
+    ensures { longest s result }
+    
   
   (* ----------------- 4. The sliding window, but faster: ------------------ *)
   clone fmap.MapImp with type key = char_t

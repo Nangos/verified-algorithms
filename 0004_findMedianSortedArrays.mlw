@@ -38,7 +38,12 @@ module FindMedianSortedArrays
     let left = nums[div (length nums - 1) 2] in
     let right = nums[div (length nums) 2] in
     R.(/) (R.(+) left right) 2.0
-   
+
+  val spec (nums1 nums2: array real): real
+    requires { length nums1 + length nums2 >= 1 }
+    requires { sorted nums1 /\ sorted nums2 }
+    ensures { result = median (sort (append nums1 nums2)) } 
+    
    
   (* ------------------------------- Lemmas: ------------------------------- *)
   

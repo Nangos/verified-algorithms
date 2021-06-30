@@ -31,7 +31,10 @@ module LengthOfLongestSubstring
   predicate longest (s: string_t) (len: int) = (* length of longest substring *)
     (exists start. valid (substr s start len)) /\
     (forall start len'. valid (substr s start len') -> len' <= len)
-    
+
+  val spec (s: string_t): int
+    ensures { s = old s }
+    ensures { longest s result }
     
     
   (* ------------- 1. The naive (nested loop) implementation: -------------- *)
