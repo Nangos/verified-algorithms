@@ -1,0 +1,428 @@
+(**
+ * https://leetcode.com/problems/median-of-two-sorted-arrays/
+ *
+ * Given two sorted arrays nums1 and nums2 of size m and n respectively (1 <= m + n),
+ * return the median of the two sorted arrays.
+ *
+ * The overall run time complexity should be O(log (m+n)).
+ *)
+ 
+module FindMedianSortedArrays
+  use bool.Bool
+  use real.Real as R
+  use ref.Ref
+  use array.Array
+  use array.ArrayPermut
+  use array.ArrayEq
+  use array.ArraySwap
+  clone array.Sorted with type elt = real, predicate le = R.(<=)
+  
+  use int.Int
+  use int.ComputerDivision
+  
+  (* ---------------------------- Problem Specs: --------------------------- *)
+  
+  val ghost function append (a1: array 'a) (a2: array 'a) : array 'a
+    ensures { length result = length a1 + length a2 }
+    ensures { forall i. 0 <= i < length a1 -> result[i] = a1[i] }
+    ensures { forall i. 0 <= i < length a2 -> result[length a1 + i] = a2[i] }
+      
+  val ghost function sort (nums: array real): array real
+    ensures { permut_all nums result }
+    ensures { sorted result }
+    
+    
+  let ghost function median (nums: array real): real
+    requires { length nums > 0 /\ sorted nums }
+  =
+    let left = nums[div (length nums - 1) 2] in
+    let right = nums[div (length nums) 2] in
+    R.(/) (R.(+) left right) 2.0
+   
+   
+  (* ------------------------------- Lemmas: ------------------------------- *)
+  
+  let rec lemma permut_sorted_implies_eq_rec (a1 a2: array real) (l u: int)
+    requires { 0 <= l <= u <= length a1 }
+    requires { permut a1 a2 l u }
+    requires { sorted_sub a1 l u /\ sorted_sub a2 l u }
+    ensures { array_eq_sub a1 a2 l u }
+    variant { u - l }
+  = 
+    assert { permut a2 a1 l u };
+    if l < u then begin
+      assert { R.(<=) a1[l] a2[l] by 
+        (forall i. l <= i < u -> R.(<=) a1[l] a1[i] && R.(<=) a1[l] a2[i]) };
+      assert { R.(<=) a2[l] a1[l] by
+        (forall i. l <= i < u -> R.(<=) a2[l] a2[i] && R.(<=) a2[l] a1[i]) };
+      assert { a1[l] = a2[l] };
+      permut_sorted_implies_eq_rec a1 a2 (l + 1) u
+    end
+  
+  
+  let lemma permut_sorted_implies_eq (a1 a2: array real)
+    requires { permut_all a1 a2 }
+    requires { sorted a1 /\ sorted a2 }
+    ensures { array_eq a1 a2 }
+  =
+    permut_sorted_implies_eq_rec a1 a2 0 (length a1)
+    
+    
+  let lemma eq_sorted_non_empty_implies_same_median (a1 a2: array real)
+    requires { array_eq a1 a2 }
+    requires { length a1 > 0 /\ sorted a1 }
+    ensures { median a1 = median a2 }
+  =
+    assert { a1[div (length a1) 2] = a2[div (length a2) 2] };
+    assert { a1[div (length a1 - 1) 2] = a2[div (length a2 - 1) 2] }
+    
+    
+  (* ---------------------- helper ghost functions: ------------------------ *)
+  
+  let ghost subarray_shift (a: array 'a) (l u: int): unit
+    requires { 0 <= l <= u < length a }
+    ensures { a[l] = old a[u] }
+    ensures { forall k. (0 <= k < l \/ u < k < length a) -> a[k] = old a[k] }
+    ensures { forall k. l < k <= u -> a[k] = old a[k - 1] }
+    ensures { permut_all (old a) a }
+  =
+    for i = l to u - 1 do
+      invariant { forall k. (0 <= k < l \/ u < k < length a) -> a[k] = old a[k] }
+      invariant { forall k. l < k < i -> a[k] = old a[k - 1] }
+      invariant { forall k. i <= k < u -> a[k] = old a[k] }
+      invariant { i = l -> a[l] = old a[l] /\ a[u] = old a[u] }
+      invariant { i > l -> a[l] = old a[u] /\ a[u] = old a[i - 1] }
+      invariant { permut_all (old a) a }
+      
+      swap a i u
+    done
+    
+  
+  let ghost subarray_swap (a: array 'a) (l1 u1 l2 u2: int): unit
+    requires { 0 <= l1 <= u1 = l2 <= u2 <= length a }
+    ensures { forall k. (0 <= k < l1 \/ u2 <= k < length a) -> a[k] = old a[k] }
+    ensures { forall k. l1 <= k < l1 + (u2 - l2) -> a[k] = old a[k + (u1 - l1)] }
+    ensures { forall k. l1 + (u2 - l2) <= k < u2 -> a[k] = old a[k - (u2 - l2)] }
+    ensures { permut_all (old a) a }
+  =
+    for i = l2 to u2 - 1 do
+      invariant { forall k. l1 <= k < l1 + (i - l2) -> a[k] = old a[k + (u1 - l1)] }
+      invariant { forall k. l1 + (i - l2) <= k < i -> a[k] = old a[k - (i - l2)]  }
+      invariant { forall k. (0 <= k < l1 \/ i <= k < length a) -> a[k] = old a[k] }
+      invariant { permut_all (old a) a }
+      
+      subarray_shift a (i - (u1 - l1)) i
+    done
+
+
+  let ghost subarray_sort (a: array real) (l u: int): unit
+    requires { 0 <= l <= u <= length a }
+    ensures { forall k. (0 <= k < l \/ u <= k < length a) -> a[k] = old a[k] }
+    ensures { sorted_sub a l u }
+    ensures { permut_sub (old a) a l u }
+    ensures { permut_sub (old a) a 0 (length a) && permut_all (old a) a }
+    (* below are just some corollaries: *)
+    ensures { forall i. l <= i < u -> (exists j. l <= j < u /\ a[i] = old a[j]) }
+    ensures { permut_sub a (old a) l u &&
+      forall i. l <= i < u -> (exists j. l <= j < u /\ a[j] = old a[i]) }
+  =
+    for i = l to u - 1 do
+      invariant { forall k. (0 <= k < l \/ u <= k < length a) -> a[k] = old a[k] }
+      invariant { sorted_sub a l i }
+      invariant { permut_sub (old a) a l u }
+      invariant { forall k1 k2. l <= k1 < i <= k2 < u -> R.(<=) a[k1] a[k2] }
+      
+      for j = i + 1 to u - 1 do
+        invariant { forall k. (0 <= k < l \/ u <= k < length a) -> a[k] = old a[k] }
+        invariant { sorted_sub a l i }
+        invariant { permut_sub (old a) a l u }
+        invariant { forall k1 k2. l <= k1 < i <= k2 < u -> R.(<=) a[k1] a[k2] }
+        invariant { forall k. i <= k < j -> R.(<=) a[i] a[k] }
+      
+        label L in
+        if not R.(<=) a[i] a[j] then
+          swap a i j;
+        assert { permut_sub (old a) (a at L) l u /\ permut_sub (a at L) a l u };
+          
+      done;
+    done
+  
+  
+  (* Looks like a function, but really just serves as a constructive proof of existance of result: *)
+  let rec ghost function pick_k_nums_into_left_half (a1 a2: array real) (k: int): (int, int)
+    requires { sorted a1 /\ sorted a2 }
+    requires { 0 <= k <= length a1 + length a2 }
+    returns { (i1, i2) -> 0 <= i1 <= length a1 /\ 0 <= i2 <= length a2 /\ i1 + i2 = k /\
+      (forall j1 j2. (0 <= j1 < i1 /\ i2 <= j2 < length a2) -> R.(<=) a1[j1] a2[j2]) /\
+      (forall j1 j2. (0 <= j2 < i2 /\ i1 <= j1 < length a1) -> R.(<=) a2[j2] a1[j1]) }
+    variant { k }
+  =
+    if k = 0 then
+      (0, 0)
+    else let (i1, i2) = pick_k_nums_into_left_half a1 a2 (k - 1) in
+      if i1 = length a1 then (i1, i2 + 1)
+      else if i2 = length a2 then (i1 + 1, i2)
+      else if R.(<=) a2[i2] a1[i1] then (i1, i2 + 1)
+      else (i1 + 1, i2)
+    
+    
+  (* ------------------------- helper functions: --------------------------- *)
+    
+  let function min (x y: real): real
+    ensures { R.(<=) x y -> result = x }
+    ensures { R.(<=) y x -> result = y }
+  =
+    if R.(<=) x y then x else y
+    
+    
+  let function max (x y: real): real
+    ensures { R.(<=) x y -> result = y }
+    ensures { R.(<=) y x -> result = x }
+  =
+    if R.(<=) x y then y else x
+  
+  
+  predicate in_bound (i: int) (a: array 'a) =
+    0 <= i < length a
+  
+  
+  let function get_min (a1 a2: array real) (i1 i2: int): real
+    requires { in_bound i1 a1 \/ in_bound i2 a2 }
+    ensures { (not in_bound i2 a2) -> result = a1[i1] }
+    ensures { (not in_bound i1 a1) -> result = a2[i2] }
+    ensures { (in_bound i1 a1 /\ in_bound i2 a2) -> result = min a1[i1] a2[i2] }
+  =
+    if i1 < 0 || i1 >= length a1 then a2[i2]
+    else if i2 < 0 || i2 >= length a2 then a1[i1]
+    else min a1[i1] a2[i2]
+    
+    
+  let function get_max (a1 a2: array real) (i1 i2: int): real
+    requires { in_bound i1 a1 \/ in_bound i2 a2 }
+    ensures { (not in_bound i2 a2) -> result = a1[i1] }
+    ensures { (not in_bound i1 a1) -> result = a2[i2] }
+    ensures { (in_bound i1 a1 /\ in_bound i2 a2) -> result = max a1[i1] a2[i2] }
+  =
+    if i1 < 0 || i1 >= length a1 then a2[i2]
+    else if i2 < 0 || i2 >= length a2 then a1[i1]
+    else max a1[i1] a2[i2]
+    
+    
+  (* Calculate the median when the total length of a1 and a2 is even, given the correct i1 and i2: *)      
+  let function calc_median_when_even (a1 a2: array real) (i1 i2: int): real
+    requires { sorted a1 /\ sorted a2 }
+    requires { 0 <= i1 <= length a1 /\ 0 <= i2 <= length a2 }
+    requires { forall j1 j2. (0 <= j1 < i1 /\ i2 <= j2 < length a2) -> R.(<=) a1[j1] a2[j2] }
+    requires { forall j1 j2. (0 <= j2 < i2 /\ i1 <= j1 < length a1) -> R.(<=) a2[j2] a1[j1] }
+    requires { let l = length a1 + length a2 in l > 0 /\ mod l 2 = 0 /\ i1 + i2 = div l 2 }
+    ensures { result = median (sort (append a1 a2)) }
+  =
+    let x = get_max a1 a2 (i1 - 1) (i2 - 1) in
+    let y = get_min a1 a2 i1 i2 in
+    let result = R.(/) (R.(+) x y) 2.0 in
+    
+    (* End of function. Below is just proof. It's f.*king tedious but anyways... *)
+    (* We create a ghost array a, which is the concatenation of a1 and a2, just for the sake of proof. *)
+    
+    (* 1. The median is just (x + y)/2. To start, we firstly prove the existence of x and y in array a: *)
+    assert { R.(<=) x y };
+    let ghost a = append a1 a2 in
+    assert { exists k. (0 <= k < i1 /\ a[k] = x) \/ (length a1 <= k < length a1 + i2 /\ a[k] = x) };
+    assert { exists k. (i1 <= k < length a1 /\ a[k] = y) \/ (length a1 + i2 <= k < length a /\ a[k] = y) };
+    
+    (* 2. We then permute the array a, so that it's divided by (i1 + i2) into the left (smaller) half
+       and the right (bigger) half: *)
+    label L0 in
+    subarray_swap a i1 (length a1) (length a1) (length a1 + i2);
+    assert { permut_all a (sort (append a1 a2)) };
+    
+    (* We prove that every element on the left <= x <= y <= every element on the right: *)
+    assert { forall j. 0 <= j < i1 + i2 -> R.(<=) a[j] x by
+      a[j] = if j < i1 then a1[j] else a2[j - i1] };
+    assert { forall j. i1 + i2 <= j < length a -> R.(<=) y a[j] by
+      a[j] = if j < length a1 + i2 then a1[j - i2] else a2[j - length a1] };
+    assert { forall j1 j2. 0 <= j1 < i1 + i2 <= j2 < length a -> (R.(<=) a[j1] a[j2] by
+      (R.(<=) a[j1] x /\ R.(<=) x y /\ R.(<=) y a[j2])) };
+      
+    (* We then prove that x sits in the left half: *)
+    assert { forall k. (0 <= k < i1 /\ (a at L0)[k] = x) -> a[k] = x };
+    assert { forall k. (length a1 <= k < length a1 + i2 /\ (a at L0)[k] = x) -> a[k - length a1 + i1] = x };
+    assert { exists k. 0 <= k < i1 + i2 /\ a[k] = x };
+    (* and in a similar way, that y sits in the right half: *)
+    assert { forall k. (i1 <= k < length a1 /\ (a at L0)[k] = y) -> a[k + i2] = y };
+    assert { forall k. (length a1 + i2 <= k < length a /\ (a at L0)[k] = y) -> a[k] = y };
+    assert { exists k. i1 + i2 <= k < length a /\ a[k] = y };
+    
+    (* 3. We then sort the left half of array a: *)
+    label L1 in
+    subarray_sort a 0 (i1 + i2);
+    (* We assert that certain properties still hold, like we still have lefts <= x <= y <= rights: *)
+    assert { permut_all a (sort (append a1 a2)) };
+    assert { sorted_sub a 0 (i1 + i2) };
+    assert { forall j. i1 + i2 <= j < length a -> R.(<=) y a[j] };
+    assert { forall j. 0 <= j < i1 + i2 -> R.(<=) a[j] x };
+    (* and that x is still in the left, y is still in the right: *)  
+    assert { exists k. 0 <= k < i1 + i2 /\ a[k] = x };
+    assert { (exists k. i1 + i2 <= k < length a /\ a[k] = y) by
+      forall k. (i1 + i2 <= k < length a /\ (a at L1)[k] = y) -> a[k] = y };
+    
+    (* 4. Similarly we sort the right half of array a: *)
+    label L2 in
+    subarray_sort a (i1 + i2) (length a);
+    (* We assert that certain properties still hold, like we still have lefts <= x <= y <= rights: *)
+    assert { permut_all a (sort (append a1 a2)) };
+    assert { sorted_sub a (i1 + i2) (length a) };
+    assert { forall j. 0 <= j < i1 + i2 -> R.(<=) a[j] x };
+    assert { forall j. i1 + i2 <= j < length a -> R.(<=) y a[j] };
+    (* and that x is still in the left, y is still in the right: *) 
+    assert { (exists k. i1 + i2 <= k < length a /\ a[k] = y) by
+      forall k. i1 + i2 <= k < length a -> (exists k'. i1 + i2 <= k' < length a /\ a[k'] = (a at L2)[k]) };
+    assert { exists k. 0 <= k < i1 + i2 /\ a[k] = x };
+    
+    (* At this point, we can prove that the array a is fully sorted, and thus has the same median
+       as what's asked in the problem specs: *)
+    assert { forall j1 j2. 0 <= j1 < i1 + i2 <= j2 < length a -> R.(<=) a[j1] a[j2] };
+    assert { sorted a };
+    assert { median a = median (sort (append a1 a2)) };
+    
+    (* Now we prove that the rightmost element in the left half, a[i1 + i2 - 1], is exactly x: *)
+    assert { R.(>=) a[i1 + i2 - 1] x };
+    assert { R.(<=) a[i1 + i2 - 1] x };
+    assert { i1 + i2 - 1 = div (length a - 1) 2 };
+    (* and in the similar way, the leftmost element in the right half, a[i1 + i2], is exactly y: *)
+    assert { R.(>=) a[i1 + i2] y };
+    assert { R.(<=) a[i1 + i2] y };
+    assert { i1 + i2 = div (length a) 2 };
+    
+    (* Finally we conclude that the result, (x + y)/2, is indeed the median we're asked to find: *)
+    assert { x = a[div (length a - 1) 2] /\ y = a[div (length a) 2] };
+    assert { result = median a };
+    result
+    
+    
+  (* Similarly, this is for calculating the median when the total length of a1 and a2 is odd: *)
+  let function calc_median_when_odd (a1 a2: array real) (i1 i2: int): real
+    requires { sorted a1 /\ sorted a2 }
+    requires { 0 <= i1 <= length a1 /\ 0 <= i2 <= length a2 }
+    requires { forall j1 j2. (0 <= j1 < i1 /\ i2 <= j2 < length a2) -> R.(<=) a1[j1] a2[j2] }
+    requires { forall j1 j2. (0 <= j2 < i2 /\ i1 <= j1 < length a1) -> R.(<=) a2[j2] a1[j1] }
+    requires { let l = length a1 + length a2 in l > 0 /\ mod l 2 = 1 /\ i1 + i2 = div l 2 }
+    ensures { result = median (sort (append a1 a2)) }
+  =
+    let y = get_min a1 a2 i1 i2 in
+    let result = y in
+    
+    (* We follow a similar approach to prove, as in `calc_median_when_even`. *)
+    
+    (* 1. The median is just y. To start, we firstly prove the existence of y in array a: *)
+    let ghost a = append a1 a2 in
+    assert { exists k. (i1 <= k < length a1 /\ a[k] = y) \/ (length a1 + i2 <= k < length a /\ a[k] = y) };
+    
+    (* 2. We then permute the array a, so that it's divided by (i1 + i2) into the left (smaller) half
+       and the right (bigger) half, but the right half has one more element: *)
+    label L0 in
+    subarray_swap a i1 (length a1) (length a1) (length a1 + i2);
+    assert { permut_all a (sort (append a1 a2)) };
+    
+    (* We prove that every element on the left <= y <= every element on the right: *)
+    assert { forall j. 0 <= j < i1 + i2 -> R.(<=) a[j] y by
+      a[j] = if j < i1 then a1[j] else a2[j - i1] };
+    assert { forall j. i1 + i2 <= j < length a -> R.(<=) y a[j] by
+      a[j] = if j < length a1 + i2 then a1[j - i2] else a2[j - length a1] };
+    assert { forall j1 j2. 0 <= j1 < i1 + i2 <= j2 < length a -> (R.(<=) a[j1] a[j2] by
+      (R.(<=) a[j1] y /\ R.(<=) y a[j2])) };
+      
+    (* We then prove that y sits in the right half: *)
+    assert { forall k. (i1 <= k < length a1 /\ (a at L0)[k] = y) -> a[k + i2] = y };
+    assert { forall k. (length a1 + i2 <= k < length a /\ (a at L0)[k] = y) -> a[k] = y };
+    assert { exists k. i1 + i2 <= k < length a /\ a[k] = y };
+    
+    (* 3. We then sort the left half of array a: *)
+    label L1 in
+    subarray_sort a 0 (i1 + i2);
+    (* We assert that certain properties still hold, like we still have lefts <= y <= rights: *)
+    assert { permut_all a (sort (append a1 a2)) };
+    assert { sorted_sub a 0 (i1 + i2) };
+    assert { forall j. i1 + i2 <= j < length a -> R.(<=) y a[j] };
+    assert { forall j. 0 <= j < i1 + i2 -> R.(<=) a[j] y };
+    (* and that y is still in the right: *)  
+    assert { (exists k. i1 + i2 <= k < length a /\ a[k] = y) by
+      forall k. (i1 + i2 <= k < length a /\ (a at L1)[k] = y) -> a[k] = y };
+    
+    (* 4. Similarly we sort the right half of array a: *)
+    label L2 in
+    subarray_sort a (i1 + i2) (length a);
+    (* We assert that certain properties still hold, like we still have lefts <= y <= rights: *)
+    assert { permut_all a (sort (append a1 a2)) };
+    assert { sorted_sub a (i1 + i2) (length a) };
+    assert { forall j. i1 + i2 <= j < length a -> R.(<=) y a[j] };
+    (* and that y is still in the right: *) 
+    assert { (exists k. i1 + i2 <= k < length a /\ a[k] = y) by
+      forall k. i1 + i2 <= k < length a -> (exists k'. i1 + i2 <= k' < length a /\ a[k'] = (a at L2)[k]) };
+    
+    (* At this point, we can prove that the array a is fully sorted, and thus has the same median
+       as what's asked in the problem specs: *)
+    assert { forall j1 j2. 0 <= j1 < i1 + i2 <= j2 < length a -> R.(<=) a[j1] a[j2] };
+    assert { sorted a };
+    assert { median a = median (sort (append a1 a2)) };
+    
+    (* Now we prove that the leftmost element in the right half, a[i1 + i2], is exactly y: *)
+    assert { R.(>=) a[i1 + i2] y };
+    assert { R.(<=) a[i1 + i2] y };
+    assert { i1 + i2 = div (length a) 2 = div (length a - 1) 2 };
+    
+    (* Finally we conclude that the result, simply y, is indeed the median we're asked to find: *)
+    assert { y = a[div (length a - 1) 2] /\ y = a[div (length a) 2] };
+    assert { result = R.(/) (R.(+) y y) 2.0 = median a };
+    result
+
+
+  (* ----------------- O(log (m+n)) time implementation: ------------------- *) 
+  
+  let impl (nums1 nums2: array real): real
+    requires { length nums1 + length nums2 >= 1 }
+    requires { sorted nums1 /\ sorted nums2 }
+    ensures { result = median (sort (append nums1 nums2)) }
+  =
+    let (m, n) = (length nums1, length nums2) in
+    let half = div (m + n) 2 in
+    let (left1, right1) = if m <= n then (0, m) else (half - n, half) in
+    (* binary search: *)
+    let ref l = left1 in
+    let ref r = right1 in
+    while l <= r do
+      invariant { forall mid1. r < mid1 <= right1 -> R.(>) nums1[mid1 - 1] nums2[half - mid1] }
+      invariant { forall mid1. left1 <= mid1 < l -> R.(>) nums2[half - mid1 - 1] nums1[mid1] }
+      invariant { left1 <= l <= right1 /\ left1 <= r <= right1 } (* surely a cool observation... *)
+      variant { r - l }
+    
+      let mid1 = div (l + r) 2 in
+      let mid2 = half - mid1 in
+      if mid1 - 1 >= 0 && mid2 < n && R.(>) nums1[mid1 - 1] nums2[mid2] then
+        (* eliminate the right half *)
+        r <- mid1 - 1
+      else if mid1 < m && mid2 - 1 >= 0 && R.(>) nums2[mid2 - 1] nums1[mid1] then
+        (* eliminate the left half *)
+        l <- mid1 + 1
+      else
+        return if mod (m + n) 2 = 1 then
+          calc_median_when_odd nums1 nums2 mid1 mid2
+        else
+          calc_median_when_even nums1 nums2 mid1 mid2
+    done;
+    
+    (* Below are just proof that the binary search must have succeeded, thus code below unreachable. *)
+    let ghost (i1, i2) = pick_k_nums_into_left_half nums1 nums2 half in
+    assert { left1 <= i1 <= right1 /\ i2 = half - i1 };
+    
+    assert { r < i1 <= right1 -> (i1 - 1 >= 0 /\ i2 < n /\ R.(>) nums1[i1 - 1] nums2[i2]) &&
+      (exists j1 j2. (0 <= j1 < i1 /\ i2 <= j2 < n) /\ R.(>) nums1[j1] nums2[j2]) };
+      
+    assert { left1 <= i1 < l -> (i2 - 1 >= 0 /\ i1 < m /\ R.(>) nums2[i2 - 1] nums1[i1]) &&
+      (exists j1 j2. (0 <= j2 < i2 /\ i1 <= j1 < m) /\ R.(>) nums2[j2] nums1[j1]) }; 
+
+    absurd
+  
+  
+  
+end
