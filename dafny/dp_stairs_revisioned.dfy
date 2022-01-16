@@ -91,7 +91,7 @@ function count_moves(height: nat): (count: nat)
 
 // Human intuitively know this fact;
 // luckly Dafny can realize it with just a little hint!
-lemma Bijective_Same_Size<T> (s: set<T>, s': set<T>, op: T -> T)
+lemma Bijective_Same_Size<T, U> (s: set<T>, s': set<U>, op: T -> U)
   requires s' == set elem | elem in s :: op(elem)
   requires forall e1, e2 :: op(e1) == op(e2) ==> e1 == e2
   ensures |s'| == |s|
