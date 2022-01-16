@@ -60,13 +60,13 @@ function count_moves(height: nat): (count: nat)
     ghost var moves_1' := set move | move in moves_1 :: [1] + move;
     assert |moves_1'| == |moves_1| by {
       forall move' ensures ([1] + move')[1..] == move' {}
-      Bijective_Same_Size(moves_1, moves_1', move => [1] + move);
+      Injective_Same_Size(moves_1, moves_1', move => [1] + move);
     }
 
     ghost var moves_2' := set move | move in moves_2 :: [2] + move;
     assert |moves_2'| == |moves_2| by {
       forall move' ensures ([2] + move')[1..] == move' {}
-      Bijective_Same_Size(moves_2, moves_2', move => [2] + move);
+      Injective_Same_Size(moves_2, moves_2', move => [2] + move);
     }
 
     ghost var moves := moves_1' + moves_2';
@@ -91,12 +91,12 @@ function count_moves(height: nat): (count: nat)
 
 // Human intuitively know this fact;
 // luckly Dafny can realize it with just a little hint!
-lemma Bijective_Same_Size<T, U> (s: set<T>, s': set<U>, op: T -> U)
+lemma Injective_Same_Size<T, U> (s: set<T>, s': set<U>, op: T -> U)
   requires s' == set elem | elem in s :: op(elem)
   requires forall e1, e2 :: op(e1) == op(e2) ==> e1 == e2
   ensures |s'| == |s|
 {
   if elem :| elem in s {
-    Bijective_Same_Size(s - {elem}, s' - {op(elem)}, op);
+    Injective_Same_Size(s - {elem}, s' - {op(elem)}, op);
   }
 }
