@@ -20,7 +20,7 @@
 predicate valid_permut(a: seq<int>, b: seq<int>)
   requires |a| == |b|
 {
-  multiset(a[..]) == multiset(b[..])
+  multiset(a) == multiset(b)
 }
 
 // This is a swap-based sorting algorithm, so permutedness is trivial:
@@ -50,13 +50,13 @@ method lol_sort(a: array<int>)
 {
   for i := 0 to a.Length
     invariant valid_permut(a[..], old(a[..]))
-    invariant sorted(a[..i]) && rightmost_is_max(a[..i])
+    invariant sorted(a[..i])
   {
     for j := 0 to a.Length
       invariant valid_permut(a[..], old(a[..]))
       invariant j < i ==> forall k | 0 <= k < j :: a[k] <= a[i]
-      invariant j < i ==> sorted(a[..i]) && rightmost_is_max(a[..i])
-      invariant j >= i ==> sorted(a[..i+1]) && rightmost_is_max(a[..i+1])
+      invariant j < i ==> sorted(a[..i])
+      invariant j >= i ==> sorted(a[..i+1])
     {
       if a[i] < a[j] {
         swap(a, i, j);
@@ -64,14 +64,7 @@ method lol_sort(a: array<int>)
     }
   }
 }
-// where:
-predicate rightmost_is_max(a: seq<int>)
-{
-  if |a| == 0 then
-    true
-  else
-    forall i | 0 <= i < |a| :: a[i] <= a[|a|-1]
-}
+
 
 
 method Main() {
