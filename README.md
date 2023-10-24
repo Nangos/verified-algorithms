@@ -8,3 +8,6 @@ I felt as confused as when I took the first programming class when I entered the
 But it was a lot of fun, for sure. I think the proofs written this way are quite self-explanatory.
 I think the proofs are quite readable for humans (at least compared to Coq's so exotic-looking tactic language),
 so I believe that learning algorithms (along with their proofs) through Dafny code is a nice experience too.
+
+# See also:
+[My other repo specialized in verifying LeetCode problems using Dafny](https://github.com/Nangos/dafleet)
